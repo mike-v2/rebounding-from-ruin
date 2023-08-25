@@ -4,11 +4,19 @@ import { ZoomBehavior } from 'd3';
 
 type TimelineItem = {
   date: Date;
+}
+
+type TimelineEvent = TimelineItem & {
   text: string;
 }
+
+const fontStartSize = 14;
+const circleStartRadius = 8;
+
 function Timeline({ data }: { data: TimelineItem[] }) {
   const ref = useRef<SVGSVGElement>(null);
   const [zoomScale, setZoomScale] = useState(1);
+
   const zoomRef = useRef<ZoomBehavior<Element, unknown>>(
     d3.zoom()
       .scaleExtent([1, 5])
@@ -21,8 +29,8 @@ function Timeline({ data }: { data: TimelineItem[] }) {
   );
 
 
-  function handleItemClicked(item: TimelineItem) {
-    console.log("date clicked: ", item.date);
+  function handleItemClicked(d: TimelineEvent) {
+    console.log("date clicked: ", d.date);
   }
 
   useEffect(() => {
@@ -45,6 +53,9 @@ function Timeline({ data }: { data: TimelineItem[] }) {
     const yScale = d3.scaleTime()
       .domain([new Date(data[0].date), new Date(data[data.length - 1].date)])
       .range([yMin, yMax]);
+    const uiScale = d3.scaleTime()
+      .domain([new Date(data[0].date), new Date(data[data.length - 1].date)])
+      .range([yMin, yMax]);
 
     // Create a line for the timeline
     contentGroup.append('line')
@@ -54,67 +65,73 @@ function Timeline({ data }: { data: TimelineItem[] }) {
       .attr('y2', yMax)
       .style('stroke', '#000');
 
-    // Add circles and text for each item
-    data.forEach((item, i) => {
-      const yPos = yScale(item.date);
+    const eventCards = contentGroup.selectAll('.event-card')
+      .data(data)
+      .enter()
+      .append('g')
+      .attr('class', 'event-card')
+      .attr('transform', (d: TimelineEvent) => `translate(${width / 2}, ${yScale(d.date)})`);
+    eventCards.append('circle')
+      .attr('x', -50)
+      .attr('y', -25)
+      .attr('r', circleStartRadius)
+      .style('pointer-events', 'all')  // or 'visiblePainted'
+      .style('fill', '#3498db')
+      .on('click', (e: MouseEvent, d: TimelineEvent) => handleItemClicked(d));
+    eventCards.append('text')
+      .attr('x', 10)
+      .attr('y', 0)
+      .text((d: TimelineEvent) => d.text)
+      .attr('font-size', fontStartSize + "px")
+      .attr('alignment-baseline', 'middle');
+    /* eventCards.append('image')
+      .attr('xlink:href', d => d.thumbnailURL)
+      .attr('x', -40)
+      .attr('y', -20)
+      .attr('width', 40)
+      .attr('height', 40); */
 
-      contentGroup.append('circle')
-        .attr('cx', width / 2)
-        .attr('cy', yPos)
-        .attr('r', 8)
-        .style('fill', '#3498db')
-        .on('click', () => handleItemClicked(item));
+    const startYear = d3.timeYear.floor(data[0].date).getFullYear();
+    const endYear = d3.timeYear.ceil(data[data.length - 1].date).getFullYear();
+    const tickValues: TimelineItem[] = d3.range(startYear, endYear + 1).map(year => ({ date: new Date(year, 0, 1) }));
+    const yearTicks = contentGroup.selectAll('.year-ticks')
+      .data(tickValues)
+      .enter()
+      .append('g')
+      .attr('class', 'year-ticks')
+      .attr('transform', (d: TimelineItem) => `translate(${width / 2}, ${yScale(d.date)})`);
+    yearTicks.append('line')
+      .attr('x1', -10)  // 10 pixels left from the center
+      .attr('x2', 10)  // 10 pixels right from the center
+      .attr('y1', 0)
+      .attr('y2', 0)
+      .style('stroke', '#aaa');
+    yearTicks.append('text')
+      .attr('x', -15)  // Positioned to the left of tick marks
+      .attr('y', 0)
+      .attr('text-anchor', 'end')
+      .attr('dominant-baseline', 'middle')
+      .text((d: TimelineItem) => d.date.getFullYear())
+      .style('font-size', '12px');
 
-      contentGroup.append('text')
-        .attr('x', (width / 2) + 20)
-        .attr('y', yPos)
-        .text(item.text)
-        .attr('alignment-baseline', 'middle');
-    });
 
     const z = d3.zoom()
       .scaleExtent([1, 5])
+      .translateExtent([[0, 0], [width, height]])
       .on('zoom', (event) => {
-        const newZoomScale = event.transform.k;
+        console.log("zoom transform: ", event.transform);
+        //console.log("zoom level: ", event.transform.k);
+        yScale.domain(event.transform.rescaleY(uiScale).domain());
 
-        event.transform.x = 0;
-
-        // Constrain y movement:
-        if (ref.current) {
-          const svgHeight = ref.current.clientHeight;
-          const contentHeight = svgHeight * newZoomScale;
-
-          const [invMin, invMax] = [Math.round(event.transform.invertY(yMin)), Math.round(event.transform.invertY(yMax))];
-
-          console.log("invert y: ", [invMin, invMax]);
-
-          /* if (invMin > yMin * event.transform.k) {
-            event.transform.y = 0;
-          } */
-          if (invMax > yMax) {
-            event.transform.y = yMax - svgHeight * event.transform.k;
-          }
-
-          if (event.transform.y > 0) {
-            event.transform.y = 0;
-          }
-          console.log("transform y: ", event.transform.y);
-        }
-
-        if (zoomScale !== newZoomScale) {
-          setZoomScale(newZoomScale);
-        }
-
-        contentGroup.attr('transform', event.transform);
+        console.log("translate y: ", yScale(new Date('1930-06-17')))
+        contentGroup.selectAll('.event-card')
+          .attr('transform', (d: TimelineEvent) => `translate(${width / 2}, ${yScale(d.date)})`);
+        contentGroup.selectAll('.year-ticks')
+          .attr('transform', (d: TimelineItem) => `translate(${width / 2}, ${yScale(d.date)})`);
       });
     zoomRef.current = z;
-
     svg.call(zoomRef.current);
   }, [data]);
-
-  useEffect(() => {
-    console.log("zoom scale: ", zoomScale);
-  }, [zoomScale])
 
   return (
     <div className='min-h-screen'>
