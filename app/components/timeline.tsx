@@ -183,26 +183,8 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     contentGroup.selectAll('.year-ticks')
       .attr('transform', (d: TimelineItem) => `translate(${svg.attr('width') / 2}, ${yScale(d.date)})`);
 
-    const newRenderedEvents: TimelineEvent[] = [];
-    const threshold = 100;  // pixel height for each event + padding
-
-    dataByImportance.forEach(event => {
-      const yPos = yScale(event.date);
-
-      if ((selectedEvent && selectedEvent.date === event.date) || !newRenderedEvents.some(e => e.yPos && Math.abs(e.yPos - yPos) < threshold)) {
-        event.visible = true;
-        event.yPos = yPos;
-        newRenderedEvents.push(event);
-      } else {
-        event.visible = false;
-      }
-    });
-
-    contentGroup.selectAll('.event-group').select('.event-card').style('display', (d: TimelineEvent) => d.visible ? null : 'none');
-    contentGroup.selectAll('.event-group').select('.event-card').select('.event-text')
-      .text((d: TimelineEvent) => d.text)
-      .call(wrapText, 200);
-  }, [yScale, contentGroup, svg, selectedEvent]);
+    handleRenderEvents();
+  }, [yScale, contentGroup, svg]);
 
   const wrapText = (selection: d3.Selection<d3.BaseType, any, HTMLElement, any>, width: number, maxLines = 3): void => {
     selection.each(function () {
@@ -232,10 +214,55 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     });
   }
 
+  function handleRenderEvents() {
+    if (!yScale) return;
+
+    const renderedEvents: TimelineEvent[] = [];
+    const threshold = 100;  // pixel height for each event + padding
+
+    if (selectedEvent) {
+      console.log("adding selected event with ypos: ", selectedEvent.yPos);
+      renderedEvents.push(selectedEvent);
+    }
+
+    dataByImportance.forEach(event => {
+      const yPos = yScale(event.date);
+
+      if (selectedEvent && selectedEvent.date === event.date || !renderedEvents.some(e => e.yPos && Math.abs(e.yPos - yPos) < threshold)) {
+        event.visible = true;
+        event.yPos = yPos;
+        renderedEvents.push(event);
+      } else {
+        event.visible = false;
+      }
+    });
+
+    contentGroup.selectAll('.event-group').select('.event-card').style('display', (d: TimelineEvent) => d.visible ? null : 'none');
+    contentGroup.selectAll('.event-group').select('.event-card').select('.event-text')
+      .text((d: TimelineEvent) => d.text)
+      .call(wrapText, 200);
+  }
+
+  useEffect(() => {
+    if (!yScale) return;
+
+    console.log("selected event change. handling render events");
+    handleRenderEvents();
+  }, [selectedEvent, yScale])
+
   function handleItemClicked(d: TimelineEvent) {
     console.log("date clicked: ", d.date);
+    if (yScale) {
+      d.yPos = yScale(d.date);
+      console.log("setting selected event ypos: ", d.yPos);
+      d.visible = true;
+    }
     setSelectedEvent(d);
   }
+
+  useEffect(() => {
+    handleRenderEvents();
+  }, [selectedEvent])
 
   return (
     <div className='min-h-screen'>
