@@ -11,6 +11,7 @@ type TimelineEvent = TimelineItem & {
   importance: number;
   text: string;
   visible?: boolean;
+  yPos?: number;
 }
 
 const fontStartSize = 14;
@@ -23,6 +24,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
   const [zoomScale, setZoomScale] = useState(1);
   const [yScale, setYScale] = useState<any>(null);
   const startYScaleRef = useRef<any>(null);
+  const [selectedEvent, setSelectedEvent] = useState<TimelineEvent>();
 
   const dataByDate = data.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
   const dataByImportance = data.slice().sort((a, b) => b.importance - a.importance);
@@ -181,15 +183,16 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     contentGroup.selectAll('.year-ticks')
       .attr('transform', (d: TimelineItem) => `translate(${svg.attr('width') / 2}, ${yScale(d.date)})`);
 
-    const renderedEvents: number[] = [];
+    const newRenderedEvents: TimelineEvent[] = [];
     const threshold = 100;  // pixel height for each event + padding
 
     dataByImportance.forEach(event => {
       const yPos = yScale(event.date);
 
-      if (!renderedEvents.some(y => Math.abs(y - yPos) < threshold)) {
+      if ((selectedEvent && selectedEvent.date === event.date) || !newRenderedEvents.some(e => e.yPos && Math.abs(e.yPos - yPos) < threshold)) {
         event.visible = true;
-        renderedEvents.push(yPos);
+        event.yPos = yPos;
+        newRenderedEvents.push(event);
       } else {
         event.visible = false;
       }
@@ -199,7 +202,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     contentGroup.selectAll('.event-group').select('.event-card').select('.event-text')
       .text((d: TimelineEvent) => d.text)
       .call(wrapText, 200);
-  }, [yScale, contentGroup, svg]);
+  }, [yScale, contentGroup, svg, selectedEvent]);
 
   const wrapText = (selection: d3.Selection<d3.BaseType, any, HTMLElement, any>, width: number, maxLines = 3): void => {
     selection.each(function () {
@@ -231,6 +234,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
 
   function handleItemClicked(d: TimelineEvent) {
     console.log("date clicked: ", d.date);
+    setSelectedEvent(d);
   }
 
   return (
