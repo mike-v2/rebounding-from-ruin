@@ -18,7 +18,17 @@ const circleStartRadius = 8;
 
 function Timeline({ data }: { data: TimelineEvent[] }) {
   const ref = useRef<SVGSVGElement>(null);
+  const [svg, setSVG] = useState<any>();
+  const [contentGroup, setContentGroup] = useState<any>();
   const [zoomScale, setZoomScale] = useState(1);
+  const [yScale, setYScale] = useState<any>(null);
+  const startYScaleRef = useRef<any>(null);
+
+
+  const dataByDate = data.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
+  const dataByImportance = data.slice().sort((a, b) => b.importance - a.importance);
+
+
 
   const zoomRef = useRef<ZoomBehavior<Element, unknown>>(
     d3.zoom()
@@ -31,48 +41,54 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       })
   );
 
-
-  function handleItemClicked(d: TimelineEvent) {
-    console.log("date clicked: ", d.date);
-  }
-
   useEffect(() => {
     if (!ref.current || !ref.current.parentElement) return;
 
-    const dataByDate = data.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
-    const dataByImportance = data.slice().sort((a, b) => b.importance - a.importance);
+    const svg = initializeSVG();
+    setSVG(svg);
+    const contentGroup = svg.append('g');
+    setContentGroup(contentGroup);
+
+    const yMin = 20;
+    const yMax = svg.attr("height") - 20;
+    const startYScale = d3.scaleTime()
+      .domain([new Date(dataByDate[0].date), new Date(dataByDate[dataByDate.length - 1].date)])
+      .range([yMin, yMax]);
+    startYScaleRef.current = startYScale;
+    const yScale = startYScale.copy();
+    setYScale(yScale);
+
+    drawTimeline(contentGroup, svg, yMin, yMax);
+    drawEventCards(contentGroup, svg, yScale);
+    drawYearTicks(contentGroup, svg, yScale);
+    initializeZoom(svg);
+
+  }, [data]);
+
+  const initializeSVG = () => {
+    if (!ref.current || !ref.current.parentElement) return;
 
     const svg: any = d3.select(ref.current);
     svg.selectAll('*').remove();
 
     const containerRect = ref.current.parentElement.getBoundingClientRect();
-    const width = containerRect.width;
-    const height = containerRect.height;
-    svg.attr("width", width)
-      .attr("height", height);
-    const yMin = 20;
-    const yMax = height - 20;
+    svg.attr("width", containerRect.width)
+      .attr("height", containerRect.height);
 
-    const contentGroup = svg.append('g');
+    return svg;
+  }
 
-    // Scale to map dates to vertical positions
-    const yScale = d3.scaleTime()
-      .domain([new Date(dataByDate[0].date), new Date(dataByDate[dataByDate.length - 1].date)])
-      .range([yMin, yMax]);
-    const uiScale = d3.scaleTime()
-      .domain([new Date(dataByDate[0].date), new Date(dataByDate[dataByDate.length - 1].date)])
-      .range([yMin, yMax]);
-
-    // Create a line for the timeline
+  const drawTimeline = (contentGroup: any, svg: any, yMin: number, yMax: number) => {
     contentGroup.append('line')
-      .attr('x1', width / 2)
+      .attr('x1', svg.attr("width") / 2)
       .attr('y1', yMin)
-      .attr('x2', width / 2)
+      .attr('x2', svg.attr("width") / 2)
       .attr('y2', yMax)
       .style('stroke', '#000');
+  }
 
+  const drawEventCards = (contentGroup: any, svg: any, yScale: d3.ScaleTime<number, number, never>) => {
     const colorInterpolator = d3.interpolate("#00ff00", "#ff0000");
-
     const colorScale = d3.scaleSequential(colorInterpolator)
       .domain([1, 10]);
 
@@ -81,7 +97,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .enter()
       .append('g')
       .attr('class', 'event-card')
-      .attr('transform', (d: TimelineEvent) => `translate(${width / 2}, ${yScale(d.date)})`);
+      .attr('transform', (d: TimelineEvent) => `translate(${svg.attr("width") / 2}, ${yScale(d.date)})`);
     eventCards.append('circle')
       .attr('x', -50)
       .attr('y', -25)
@@ -110,16 +126,19 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .attr('y', -20)
       .attr('width', 40)
       .attr('height', 40);
+  }
 
+  const drawYearTicks = (contentGroup: any, svg: any, yScale: d3.ScaleTime<number, number, never>) => {
     const startYear = d3.timeYear.floor(dataByDate[0].date).getFullYear();
     const endYear = d3.timeYear.ceil(dataByDate[dataByDate.length - 1].date).getFullYear();
     const tickValues: TimelineItem[] = d3.range(startYear, endYear + 1).map(year => ({ date: new Date(year, 0, 1) }));
+
     const yearTicks = contentGroup.selectAll('.year-ticks')
       .data(tickValues)
       .enter()
       .append('g')
       .attr('class', 'year-ticks')
-      .attr('transform', (d: TimelineItem) => `translate(${width / 2}, ${yScale(d.date)})`);
+      .attr('transform', (d: TimelineItem) => `translate(${svg.attr('width') / 2}, ${yScale(d.date)})`);
     yearTicks.append('line')
       .attr('x1', -10)  // 10 pixels left from the center
       .attr('x2', 10)  // 10 pixels right from the center
@@ -133,60 +152,75 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .attr('dominant-baseline', 'middle')
       .text((d: TimelineItem) => d.date.getFullYear())
       .style('font-size', '12px');
+  }
 
-
+  const initializeZoom = (svg: any) => {
     const z = d3.zoom()
       .scaleExtent([1, 12])
-      .translateExtent([[0, 0], [width, height]])
+      .translateExtent([[0, 0], [svg.attr('width'), svg.attr('height')]])
       .on('zoom', (event) => {
         console.log("zoom transform: ", event.transform);
-        //console.log("zoom level: ", event.transform.k);
-        yScale.domain(event.transform.rescaleY(uiScale).domain());
 
-        console.log("translate y: ", yScale(new Date('1930-06-17')))
-        contentGroup.selectAll('.event-card')
-          .attr('transform', (d: TimelineEvent) => `translate(${width / 2}, ${yScale(d.date)})`);
-        contentGroup.selectAll('.year-ticks')
-          .attr('transform', (d: TimelineItem) => `translate(${width / 2}, ${yScale(d.date)})`);
-
-        const renderedEvents: number[] = [];
-        const threshold = 100;  // pixel height for each event + padding
-
-        dataByImportance.forEach(event => {
-          const yPos = yScale(event.date);
-
-          if (!renderedEvents.some(y => Math.abs(y - yPos) < threshold)) {
-            event.visible = true;
-            renderedEvents.push(yPos);
-          } else {
-            event.visible = false;
+        setYScale(prevYScale => {
+          const newYScale = startYScaleRef.current?.copy();
+          newYScale?.domain(event.transform.rescaleY(startYScaleRef.current).domain());
+          if (prevYScale === newYScale) {
+            console.log('State is identical');
           }
+          return newYScale;
         });
 
-        contentGroup.selectAll('.event-card').select('.event-text').style('display', (d: TimelineEvent) => d.visible ? null : 'none');
+
+        //console.log("set y scale to: ", newYScale);
       });
     zoomRef.current = z;
     svg.call(z);
-  }, [data]);
+  }
 
-  function wrapText(selection, width, maxLines = 3) {
+  useEffect(() => {
+    if (!yScale || !contentGroup || !svg) return;
+
+    console.log("translate y: ", yScale(new Date('1930-06-17')))
+    contentGroup.selectAll('.event-card')
+      .attr('transform', (d: TimelineEvent) => `translate(${svg.attr('width') / 2}, ${yScale(d.date)})`);
+    contentGroup.selectAll('.year-ticks')
+      .attr('transform', (d: TimelineItem) => `translate(${svg.attr('width') / 2}, ${yScale(d.date)})`);
+
+    const renderedEvents: number[] = [];
+    const threshold = 100;  // pixel height for each event + padding
+
+    dataByImportance.forEach(event => {
+      const yPos = yScale(event.date);
+
+      if (!renderedEvents.some(y => Math.abs(y - yPos) < threshold)) {
+        event.visible = true;
+        renderedEvents.push(yPos);
+      } else {
+        event.visible = false;
+      }
+    });
+
+    contentGroup.selectAll('.event-card').select('.event-text').style('display', (d: TimelineEvent) => d.visible ? null : 'none');
+  }, [yScale, contentGroup, svg]);
+
+  const wrapText = (selection: d3.Selection<d3.BaseType, any, HTMLElement, any>, width: number, maxLines = 3): void => {
     selection.each(function () {
-      let text = d3.select(this),
-        words = text.text().split(/\s+/).reverse(),
-        word,
-        line = [],
-        lineCount = 0,
-        lineHeight = 1.2, // ems
-        y = text.attr("y"),
-        tspan = text.text(null).append("tspan").attr("x", 0).attr("y", y);
+      const text = d3.select(this);
+      const words = text.text().split(/\s+/).reverse();
+      let word;
+      let line: string[] = [];
+      let lineCount = 0;
+      const lineHeight = 1.2; // em
+      const y = text.attr("y");
+      let tspan = text.text(null).append("tspan").attr("x", 0).attr("y", y);
 
       while (word = words.pop()) {
         if (lineCount >= maxLines) {
-          break; // Exit loop once max lines reached
+          break;
         }
         line.push(word);
         tspan.text(line.join(" "));
-        if (tspan.node().getComputedTextLength() > width) {
+        if (tspan.node()!.getComputedTextLength() > width) {
           line.pop();
           tspan.text(line.join(" "));
           line = [word];
@@ -195,6 +229,10 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
         }
       }
     });
+  }
+
+  function handleItemClicked(d: TimelineEvent) {
+    console.log("date clicked: ", d.date);
   }
 
   return (
