@@ -24,11 +24,8 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
   const [yScale, setYScale] = useState<any>(null);
   const startYScaleRef = useRef<any>(null);
 
-
   const dataByDate = data.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
   const dataByImportance = data.slice().sort((a, b) => b.importance - a.importance);
-
-
 
   const zoomRef = useRef<ZoomBehavior<Element, unknown>>(
     d3.zoom()
@@ -92,19 +89,23 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     const colorScale = d3.scaleSequential(colorInterpolator)
       .domain([1, 10]);
 
-    const eventCards = contentGroup.selectAll('.event-card')
+    const eventGroups = contentGroup.selectAll('.event-group')
       .data(dataByDate)
       .enter()
       .append('g')
-      .attr('class', 'event-card')
+      .attr('class', 'event-group')
       .attr('transform', (d: TimelineEvent) => `translate(${svg.attr("width") / 2}, ${yScale(d.date)})`);
-    eventCards.append('circle')
+    // Circle is directly appended to the event group so it's always visible
+    eventGroups.append('circle')
       .attr('x', -50)
       .attr('y', -25)
       .attr('r', circleStartRadius)
       .style('pointer-events', 'all')  // or 'visiblePainted'
       .style('fill', (d: TimelineEvent) => colorScale(d.importance))
       .on('click', (e: MouseEvent, d: TimelineEvent) => handleItemClicked(d));
+    const eventCards = eventGroups.append('g')
+      .attr('class', 'event-card')
+      .style('display', (d: TimelineEvent) => d.visible ? null : 'none');
     eventCards.append('rect')
       .attr('x', 10)
       .attr('y', 0 - (fontStartSize / 2))
@@ -118,7 +119,6 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .attr('font-size', fontStartSize + "px")
       .attr('alignment-baseline', 'middle')
       .attr('class', 'event-text')
-      .style('display', (d: TimelineEvent) => d.visible ? null : 'none')
       .call(wrapText, 200);
     eventCards.append('image')
       .attr('xlink:href', d => d.thumbnailURL)
@@ -161,17 +161,12 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .on('zoom', (event) => {
         console.log("zoom transform: ", event.transform);
 
-        setYScale(prevYScale => {
+        // use functional state change otherwise re-render not triggered
+        setYScale((prevYScale: any) => {
           const newYScale = startYScaleRef.current?.copy();
           newYScale?.domain(event.transform.rescaleY(startYScaleRef.current).domain());
-          if (prevYScale === newYScale) {
-            console.log('State is identical');
-          }
           return newYScale;
         });
-
-
-        //console.log("set y scale to: ", newYScale);
       });
     zoomRef.current = z;
     svg.call(z);
@@ -180,8 +175,8 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
   useEffect(() => {
     if (!yScale || !contentGroup || !svg) return;
 
-    console.log("translate y: ", yScale(new Date('1930-06-17')))
-    contentGroup.selectAll('.event-card')
+    //console.log("translate y: ", yScale(new Date('1930-06-17')))
+    contentGroup.selectAll('.event-group')
       .attr('transform', (d: TimelineEvent) => `translate(${svg.attr('width') / 2}, ${yScale(d.date)})`);
     contentGroup.selectAll('.year-ticks')
       .attr('transform', (d: TimelineItem) => `translate(${svg.attr('width') / 2}, ${yScale(d.date)})`);
@@ -200,7 +195,10 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       }
     });
 
-    contentGroup.selectAll('.event-card').select('.event-text').style('display', (d: TimelineEvent) => d.visible ? null : 'none');
+    contentGroup.selectAll('.event-group').select('.event-card').style('display', (d: TimelineEvent) => d.visible ? null : 'none');
+    contentGroup.selectAll('.event-group').select('.event-card').select('.event-text')
+      .text((d: TimelineEvent) => d.text)
+      .call(wrapText, 200);
   }, [yScale, contentGroup, svg]);
 
   const wrapText = (selection: d3.Selection<d3.BaseType, any, HTMLElement, any>, width: number, maxLines = 3): void => {
