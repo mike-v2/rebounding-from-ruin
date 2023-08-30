@@ -222,11 +222,14 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
         line.push(word);
         tspan.text(line.join(" "));
         if (tspan.node()!.getComputedTextLength() > eventCardWidth) {
+          ++lineCount;
           line.pop();
           tspan.text(line.join(" "));
+          if (lineCount === maxLines) break;
+
           line = [word];
           tspan = text.append("tspan").attr("x", x).attr("y", y)
-            .attr("dy", `${++lineCount * eventCardLineHeight}em`).text(word);
+            .attr("dy", `${lineCount * eventCardLineHeight}em`).text(word);
         }
       }
 
