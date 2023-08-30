@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as d3 from 'd3';
 import { ZoomBehavior } from 'd3';
 
@@ -12,12 +12,14 @@ type TimelineEvent = TimelineItem & {
   text: string;
   visible?: boolean;
   yPos?: number;
-  isTruncated?: boolean;
+  isExpanded?: boolean;
 }
 
 const fontStartSize = 14;
 const circleStartRadius = 8;
-const lineHeight = 1.2; // em
+const eventCardLineHeight = 1.2; // em
+const eventCardWidth = 200;
+const eventCardDefaultNumLines = 3;
 
 function Timeline({ data }: { data: TimelineEvent[] }) {
   const ref = useRef<SVGSVGElement>(null);
@@ -28,8 +30,18 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
   const startYScaleRef = useRef<any>(null);
   const [selectedEvent, setSelectedEvent] = useState<TimelineEvent>();
 
-  const dataByDate = data.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
-  const dataByImportance = data.slice().sort((a, b) => b.importance - a.importance);
+  const dataByDate = useMemo(() => {
+    return data.slice().sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [data]);
+
+  const dataByImportance = useMemo(() => {
+    const sortedData = data.slice().sort((a, b) => b.importance - a.importance);
+    for (const entry of sortedData) {
+      entry.isExpanded = false;
+    }
+    return sortedData;
+  }, [data]);
+
 
   const zoomRef = useRef<ZoomBehavior<Element, unknown>>(
     d3.zoom()
@@ -123,7 +135,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .attr('font-size', fontStartSize + "px")
       .attr('alignment-baseline', 'middle')
       .attr('class', 'event-text')
-      .call(wrapText, 200, contentGroup);
+      .call(wrapText);
     eventCards.append('image')
       .attr('xlink:href', d => d.thumbnailURL)
       .attr('x', -40)
@@ -188,11 +200,14 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     handleRenderEvents();
   }, [yScale, contentGroup, svg, handleRenderEvents]);
 
-  const wrapText = (selection: d3.Selection<d3.BaseType, any, HTMLElement, any>, width: number, contentGroup: any, maxLines = 3): void => {
+  function wrapText(selection: d3.Selection<d3.BaseType, any, HTMLElement, any>) {
+    selection.each(function (d: TimelineEvent) {
+      const maxLines = d.isExpanded ? Infinity : eventCardDefaultNumLines;
+      console.log("wrapping with max lines = " + maxLines);
 
-    selection.each(function (d) {
       const text = d3.select(this);
-      const words = text.text().split(/\s+/).reverse();
+      const words = d.text.split(/\s+/).reverse();
+
       let word;
       let line: string[] = [];
       let lineCount = 0;
@@ -202,63 +217,64 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
 
       while (word = words.pop()) {
         if (lineCount >= maxLines) {
-          d.isTruncated = true;
           break;
-        } else {
-          d.isTruncated = false;
-        }
+        } 
         line.push(word);
         tspan.text(line.join(" "));
-        if (tspan.node()!.getComputedTextLength() > width) {
+        if (tspan.node()!.getComputedTextLength() > eventCardWidth) {
           line.pop();
           tspan.text(line.join(" "));
           line = [word];
           tspan = text.append("tspan").attr("x", x).attr("y", y)
-            .attr("dy", `${++lineCount * lineHeight}em`).text(word);
+            .attr("dy", `${++lineCount * eventCardLineHeight}em`).text(word);
         }
       }
-    });
 
-    displayReadMoreOnTruncatedText(contentGroup);
-  }
-
-  function displayReadMoreOnTruncatedText(contentGroup: any) {
-    contentGroup.selectAll('.event-group').select('.event-card').each(function (d: TimelineEvent) {
-      const card = d3.select(this);
-
-      // Identify the main text element inside the event card
-      const textElement = card.select('text.event-text');
-
-      if (d.isTruncated) {
-        const readMoreTspan = textElement.select('.read-more-tspan');
-        if (readMoreTspan.empty()) {
-          textElement.append('tspan')
-            .attr('class', 'read-more-tspan')
-            .attr('x', 0)
-            .attr('dy', `${lineHeight}em`)
-            .text("Read More")
-            .style('fill', 'blue')
-            .style('cursor', 'pointer')
-            .on('click', (event, d) => handleReadMoreClick(event, this, d.text));
-        }
+      if (d.isExpanded) {
+        displayReadLessOnExpandedText(this, d);
+      } else {
+        displayReadMoreOnTruncatedText(this, d);
       }
     });
   }
 
-  function handleReadMoreClick(e, cardNode, fullText) {
-    const node = d3.select(cardNode).select('.event-text');
+  function displayReadMoreOnTruncatedText(textNode, d: TimelineEvent) {
+    const textSelection = d3.select(textNode);
+    const data: TimelineEvent = textSelection.datum();
+    data.isExpanded = false;
 
-    node.selectAll('tspan').remove();
-    node.text(fullText);
-    wrapText(node, 200, contentGroup, Infinity);
-    node.append('tspan')
+    const readMoreTspan = textSelection.select('.read-more-tspan');
+    if (readMoreTspan.empty()) {
+      textSelection.append('tspan')
+        .attr('class', 'read-more-tspan')
+        .attr('x', 0)
+        .attr('dy', `${eventCardLineHeight}em`)
+        .text("Read More")
+        .style('fill', 'blue')
+        .style('cursor', 'pointer')
+        .on('click', (event) => {
+          d.isExpanded = true;
+          wrapText(textSelection);
+        });
+    }
+  }
+
+  function displayReadLessOnExpandedText(textNode, d: TimelineEvent) {
+    const textSelection = d3.select(textNode);
+    const data: TimelineEvent = textSelection.datum();
+    data.isExpanded = true;
+
+    textSelection.append('tspan')
       .attr('class', 'read-more-tspan')
       .attr('x', 0)
       .attr('dy', '1.2em')
       .text("Read Less")
       .style('fill', 'blue')
       .style('cursor', 'pointer')
-      .on('click', (event, d) => wrapText(node, 200, contentGroup));;
+      .on('click', (event, d) => {
+        d.isExpanded = false;
+        wrapText(textSelection);
+      });
   }
 
   function handleRenderEvents() {
@@ -286,7 +302,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     contentGroup.selectAll('.event-group').select('.event-card').style('display', (d: TimelineEvent) => d.visible ? null : 'none');
     contentGroup.selectAll('.event-group').select('.event-card').select('.event-text')
       .text((d: TimelineEvent) => d.text)
-      .call(wrapText, 200, contentGroup);
+      .call(wrapText);
   }
 
   useEffect(() => {
