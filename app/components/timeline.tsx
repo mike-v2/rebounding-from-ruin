@@ -69,7 +69,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .range([yMin, yMax]);
     startYScaleRef.current = startYScale;
     const yScale = startYScale.copy();
-    setYScale(yScale);
+    setYScale((prevYScale: any) => yScale);
 
     drawTimeline(contentGroup, svg, yMin, yMax);
     drawEventCards(contentGroup, svg, yScale);
@@ -247,7 +247,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
 
   function displayReadMoreOnTruncatedText(textNode, d: TimelineEvent) {
     const textSelection = d3.select(textNode);
-    const data: TimelineEvent = textSelection.datum();
+    const data: TimelineEvent = textSelection.datum() as TimelineEvent;
     data.isExpanded = false;
 
     const readMoreTspan = textSelection.select('.read-more-tspan');
@@ -264,13 +264,11 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
           wrapText(textSelection);
         });
     }
-
-
   }
 
   function displayReadLessOnExpandedText(textNode, d: TimelineEvent) {
     const textSelection = d3.select(textNode);
-    const data: TimelineEvent = textSelection.datum();
+    const data: TimelineEvent = textSelection.datum() as TimelineEvent;
     data.isExpanded = true;
 
     textSelection.append('tspan')
@@ -280,14 +278,16 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .text("Read Less")
       .style('fill', 'blue')
       .style('cursor', 'pointer')
-      .on('click', (event, d) => {
-        d.isExpanded = false;
+      .on('click', (event) => {
+        data.isExpanded = false;
         wrapText(textSelection);
       });
   }
 
   function handleRenderEvents() {
+    console.log("try rendering events")
     if (!yScale) return;
+    console.log("rendering events")
 
     const renderedEvents: TimelineEvent[] = [];
     const threshold = 100;  // pixel height for each event + padding
@@ -315,9 +315,11 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
   }
 
   useEffect(() => {
+
     if (!yScale) return;
+    console.log('yscale change')
     handleRenderEvents();
-  }, [selectedEvent, yScale])
+  }, [yScale, handleRenderEvents])
 
   function handleItemClicked(d: TimelineEvent) {
     console.log("date clicked: ", d.date);
