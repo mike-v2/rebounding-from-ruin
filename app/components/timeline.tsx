@@ -126,7 +126,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .attr('x', 10)
       .attr('y', 0 - (fontStartSize / 2))
       .attr('width', 200)
-      .attr('height', 70)
+      .attr('height', `${eventCardLineHeight * eventCardDefaultNumLines}em`)
       .attr('fill', 'lightgray');
     eventCards.append('text')
       .attr('x', 10)
@@ -203,17 +203,16 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
   function wrapText(selection: d3.Selection<d3.BaseType, any, HTMLElement, any>) {
     selection.each(function (d: TimelineEvent) {
       const maxLines = d.isExpanded ? Infinity : eventCardDefaultNumLines;
-      console.log("wrapping with max lines = " + maxLines);
 
-      const text = d3.select(this);
+      const textSelection = d3.select(this);
       const words = d.text.split(/\s+/).reverse();
 
       let word;
       let line: string[] = [];
       let lineCount = 0;
-      const x = text.attr("x");
-      const y = text.attr("y");
-      let tspan = text.text(null).append("tspan").attr("x", x).attr("y", y);
+      const x = textSelection.attr("x");
+      const y = textSelection.attr("y");
+      let tspan = textSelection.text(null).append("tspan").attr("x", x).attr("y", y);
 
       while (word = words.pop()) {
         if (lineCount >= maxLines) {
@@ -228,7 +227,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
           if (lineCount === maxLines) break;
 
           line = [word];
-          tspan = text.append("tspan").attr("x", x).attr("y", y)
+          tspan = textSelection.append("tspan").attr("x", x).attr("y", y)
             .attr("dy", `${lineCount * eventCardLineHeight}em`).text(word);
         }
       }
@@ -238,6 +237,11 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       } else {
         displayReadMoreOnTruncatedText(this, d);
       }
+
+      // rect height matches text
+      const parentGroup = textSelection.select(function () { return this.parentNode; });
+      const rectSelection = parentGroup.select('rect');
+      rectSelection.attr('height', `${eventCardLineHeight * lineCount}em`);
     });
   }
 
@@ -260,6 +264,8 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
           wrapText(textSelection);
         });
     }
+
+
   }
 
   function displayReadLessOnExpandedText(textNode, d: TimelineEvent) {
