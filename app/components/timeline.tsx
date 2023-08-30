@@ -9,6 +9,8 @@ type TimelineItem = {
 type TimelineEvent = TimelineItem & {
   displayDate: string;
   importance: number;
+  title: string;
+  subtitle: string;
   text: string;
   visible?: boolean;
   yPos?: number;
@@ -75,7 +77,6 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     drawEventCards(contentGroup, svg, yScale);
     drawYearTicks(contentGroup, svg, yScale);
     initializeZoom(svg);
-
   }, [data]);
 
   const initializeSVG = () => {
@@ -202,35 +203,70 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
 
   function wrapText(selection: d3.Selection<d3.BaseType, any, HTMLElement, any>) {
     selection.each(function (d: TimelineEvent) {
-      const maxLines = d.isExpanded ? Infinity : eventCardDefaultNumLines;
+      //const maxLines = d.isExpanded ? Infinity : eventCardDefaultNumLines;
 
       const textSelection = d3.select(this);
-      const words = d.text.split(/\s+/).reverse();
+      textSelection.text(null);
 
-      let word;
-      let line: string[] = [];
-      let lineCount = 0;
-      const x = textSelection.attr("x");
-      const y = textSelection.attr("y");
-      let tspan = textSelection.text(null).append("tspan").attr("x", x).attr("y", y);
-
-      while (word = words.pop()) {
-        if (lineCount >= maxLines) {
-          break;
-        } 
-        line.push(word);
-        tspan.text(line.join(" "));
-        if (tspan.node()!.getComputedTextLength() > eventCardWidth) {
-          ++lineCount;
-          line.pop();
-          tspan.text(line.join(" "));
-          if (lineCount === maxLines) break;
-
-          line = [word];
-          tspan = textSelection.append("tspan").attr("x", x).attr("y", y)
-            .attr("dy", `${lineCount * eventCardLineHeight}em`).text(word);
-        }
+      const sections = [d.title, d.subtitle];
+      if (d.isExpanded) {
+        sections.push(d.text);
       }
+      const sectionClasses = [
+        'font-bold text-xl', // For the title
+        'italic',    // For the subtitle
+        ''           // Default for the text section
+      ];
+
+      const sectionFontSizes = [
+        '24px',  // For the title, equivalent to text-xl
+        '16px',  // For the subtitle or whatever you desire
+        '12px'   // Default for the text section or whatever you desire
+      ];
+
+      let lineCount = 0;
+      sections.forEach((section, index) => {
+        const currentClass = sectionClasses[index];
+        const currentFontSize = sectionFontSizes[index];
+
+        // reverse and pop are O(n) while shift is O(n^2)
+        const words = section.split(/\s+/).reverse();
+
+        let word;
+        let line: string[] = [];
+
+        const x = textSelection.attr("x");
+        const y = textSelection.attr("y");
+        let tspan = textSelection.append("tspan")
+          .attr("x", x)
+          .attr("y", y)
+          .attr("dy", `${lineCount * eventCardLineHeight}em`)
+          .attr("class", currentClass)
+          .attr('font-size', currentFontSize);
+
+        while (word = words.pop()) {
+          line.push(word);
+          tspan.text(line.join(" "));
+
+          if (tspan.node()!.getComputedTextLength() > eventCardWidth) {
+            line.pop();
+            tspan.text(line.join(" "));
+            line = [word];
+
+            ++lineCount;
+
+            tspan = textSelection.append("tspan")
+              .attr("x", x)
+              .attr("y", y)
+              .attr("dy", `${lineCount * eventCardLineHeight}em`)
+              .attr("class", currentClass)
+              .attr('font-size', currentFontSize)
+              .text(word);
+          }
+        }
+        ++lineCount;
+      });
+
 
       if (d.isExpanded) {
         displayReadLessOnExpandedText(this, d);
@@ -239,9 +275,11 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       }
 
       // rect height matches text
+      const height = this.getBBox().height;
+      console.log('height = ' + height);
       const parentGroup = textSelection.select(function () { return this.parentNode; });
       const rectSelection = parentGroup.select('rect');
-      rectSelection.attr('height', `${eventCardLineHeight * lineCount}em`);
+      rectSelection.attr('height', height);
     });
   }
 
