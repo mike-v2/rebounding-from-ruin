@@ -15,6 +15,7 @@ type TimelineEvent = TimelineItem & {
   visible?: boolean;
   yPos?: number;
   isExpanded?: boolean;
+  imagePath?: string;
 }
 
 const fontStartSize = 14;
@@ -40,6 +41,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     const sortedData = data.slice().sort((a, b) => b.importance - a.importance);
     for (const entry of sortedData) {
       entry.isExpanded = false;
+      entry.imagePath = '/images/GD-soup-kitchen.jpg'
     }
     return sortedData;
   }, [data]);
@@ -126,7 +128,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
     eventCards.append('rect')
       .attr('x', 10)
       .attr('y', 0 - (fontStartSize / 2))
-      .attr('width', 200)
+      .attr('width', eventCardWidth)
       .attr('height', `${eventCardLineHeight * eventCardDefaultNumLines}em`)
       .attr('fill', 'lightgray');
     eventCards.append('text')
@@ -137,12 +139,7 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
       .attr('alignment-baseline', 'middle')
       .attr('class', 'event-text')
       .call(wrapText);
-    eventCards.append('image')
-      .attr('xlink:href', d => d.thumbnailURL)
-      .attr('x', -40)
-      .attr('y', -20)
-      .attr('width', 40)
-      .attr('height', 40);
+
   }
 
   const drawYearTicks = (contentGroup: any, svg: any, yScale: d3.ScaleTime<number, number, never>) => {
@@ -224,7 +221,9 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
         '12px'   // Default for the text section or whatever you desire
       ];
 
-      let lineCount = 0;
+      let runningHeight = 0;
+      const x = textSelection.attr("x");
+      const y = textSelection.attr("y");
       sections.forEach((section, index) => {
         const currentClass = sectionClasses[index];
         const currentFontSize = sectionFontSizes[index];
@@ -235,12 +234,10 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
         let word;
         let line: string[] = [];
 
-        const x = textSelection.attr("x");
-        const y = textSelection.attr("y");
         let tspan = textSelection.append("tspan")
           .attr("x", x)
           .attr("y", y)
-          .attr("dy", `${lineCount * eventCardLineHeight}em`)
+          .attr("dy", `${runningHeight}px`)
           .attr("class", currentClass)
           .attr('font-size', currentFontSize);
 
@@ -253,47 +250,76 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
             tspan.text(line.join(" "));
             line = [word];
 
-            ++lineCount;
+            runningHeight += parseInt(currentFontSize) * eventCardLineHeight;
 
             tspan = textSelection.append("tspan")
               .attr("x", x)
               .attr("y", y)
-              .attr("dy", `${lineCount * eventCardLineHeight}em`)
+              .attr("dy", `${runningHeight}px`)
               .attr("class", currentClass)
               .attr('font-size', currentFontSize)
               .text(word);
           }
         }
-        ++lineCount;
+        runningHeight += parseInt(currentFontSize) * eventCardLineHeight;
       });
 
+      let contentHeight = this.getBBox().height;
+      const parentGroup = textSelection.select(function () { return this.parentNode; });
 
       if (d.isExpanded) {
-        displayReadLessOnExpandedText(this, d);
+        if (d.imagePath && d.imagePath !== '') {
+          parentGroup.append('image')
+            .attr('xlink:href', d.imagePath)
+            .attr('x', x)
+            .attr('y', runningHeight)
+            .attr('width', eventCardWidth)
+            .attr('class', 'event-card-image');
+
+          const imgHeight = eventCardWidth; //parentGroup.select('.event-card-image').node().height.baseVal.value;
+          contentHeight += imgHeight;
+          console.log("adding image height: ", imgHeight);
+        }
       } else {
-        displayReadMoreOnTruncatedText(this, d);
+        parentGroup.select('.event-card-image').remove();
       }
 
-      // rect height matches text
-      const height = this.getBBox().height;
-      console.log('height = ' + height);
-      const parentGroup = textSelection.select(function () { return this.parentNode; });
+      if (d.isExpanded) {
+        displayReadLessOnExpandedText(this, d, contentHeight);
+      } else {
+        displayReadMoreOnTruncatedText(this, d, contentHeight);
+      }
+
+      // rect height matches contents
+      //console.log('height = ' + contentHeight);
       const rectSelection = parentGroup.select('rect');
-      rectSelection.attr('height', height);
+      rectSelection.attr('height', contentHeight);
     });
   }
 
-  function displayReadMoreOnTruncatedText(textNode, d: TimelineEvent) {
+  function displayReadMoreOnTruncatedText(textNode, d: TimelineEvent, contentHeight: number) {
     const textSelection = d3.select(textNode);
-    const data: TimelineEvent = textSelection.datum() as TimelineEvent;
-    data.isExpanded = false;
+    const parentGroup = textSelection.select(function () { return this.parentNode; });
+    d.isExpanded = false;
 
-    const readMoreTspan = textSelection.select('.read-more-tspan');
-    if (readMoreTspan.empty()) {
-      textSelection.append('tspan')
-        .attr('class', 'read-more-tspan')
+    /* console.log("text y = ", textSelection.attr('y'))
+    const textY = parseFloat(textSelection.attr('y'));
+    //const textHeight = textNode.height; //parseFloat(textSelection.attr('height'));
+    console.log("text height = ", contentHeight)
+    const contentBottom = textY + contentHeight;
+    console.log("contentBottom: ", contentBottom); */
+
+    // Compute the y position for the "Read More" based on the image's position and height
+    const readMoreYPosition = contentHeight + 10; // Added 10 for spacing between the image and "Read More"
+    console.log("read more y position = ", readMoreYPosition);
+
+    // Now, either select an existing "Read More" text or append one
+    let readMoreTextSelection = parentGroup.select('.read-more-text');
+    if (readMoreTextSelection.empty()) {
+      readMoreTextSelection = parentGroup.append('text')
+        .attr('class', 'read-more-text')
         .attr('x', 0)
-        .attr('dy', `${eventCardLineHeight}em`)
+        .attr('y', readMoreYPosition)
         .text("Read More")
         .style('fill', 'blue')
         .style('cursor', 'pointer')
@@ -301,23 +327,49 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
           d.isExpanded = true;
           wrapText(textSelection);
         });
+    } else {
+      // If "Read More" text already exists, just adjust its y-position
+      readMoreTextSelection
+        .text('Read More')
+        .attr('y', readMoreYPosition)
+        .on('click', (event) => {
+          d.isExpanded = true;
+          wrapText(textSelection);
+        });
     }
   }
 
-  function displayReadLessOnExpandedText(textNode, d: TimelineEvent) {
+  function displayReadLessOnExpandedText(textNode, d: TimelineEvent, contentHeight: number) {
     const textSelection = d3.select(textNode);
-    const data: TimelineEvent = textSelection.datum() as TimelineEvent;
-    data.isExpanded = true;
+    const parentGroup = textSelection.select(function () { return this.parentNode; });
+    d.isExpanded = true;
 
-    textSelection.append('tspan')
-      .attr('class', 'read-more-tspan')
-      .attr('x', 0)
-      .attr('dy', '1.2em')
-      .text("Read Less")
-      .style('fill', 'blue')
-      .style('cursor', 'pointer')
+    /* const imageNode = parentGroup.select('.event-card-image');
+    let contentBottom = 0; // If no image is present
+    if (imageNode.empty()) {
+      console.log("text y = ", textSelection.attr('y'))
+      const textY = parseFloat(textSelection.attr('y'));
+      console.log("text height = ", textSelection.attr('height'))
+
+      const textHeight = parseFloat(textSelection.attr('height'));
+      contentBottom = textY + textHeight;
+      console.log("contentBottom: ", contentBottom);
+    } else {
+      const imageY = parseFloat(imageNode.attr('y'));
+      const imageHeight = parseFloat(imageNode.attr('height'));
+      console.log("imageHeight = ", imageNode.attr('height'))
+
+      contentBottom = imageY + imageHeight;
+    } */
+
+    const readLessYPosition = contentHeight + 10; // Added 10 for spacing between the image and "Read More"
+    console.log("read less y position = ", readLessYPosition);
+
+    parentGroup.select('.read-more-text')
+      .text('Read Less')
+      .attr('y', readLessYPosition)
       .on('click', (event) => {
-        data.isExpanded = false;
+        d.isExpanded = false;
         wrapText(textSelection);
       });
   }
@@ -353,7 +405,6 @@ function Timeline({ data }: { data: TimelineEvent[] }) {
   }
 
   useEffect(() => {
-
     if (!yScale) return;
     console.log('yscale change')
     handleRenderEvents();
